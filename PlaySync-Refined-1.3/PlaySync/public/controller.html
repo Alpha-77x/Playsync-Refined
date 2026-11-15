@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>PlaySync Gamepad</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Rajdhani:wght@700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/controller.css"><script src="/socket.io/socket.io.js"></script>
+</head><body>
+<div id="rotate"><div><div style="font-size:3rem">↻</div><div class="rt">ROTATE TO LANDSCAPE</div><p style="color:#94a3b8">Turn your phone sideways to play.</p></div></div>
+<section id="join" class="screen"><div class="card"><div class="logo">⚡ PLAYSYNC</div><p class="sub">Enter the room code shown on the host screen.</p><form id="form" class="form"><input id="room" class="input" maxlength="4" placeholder="ROOM CODE" autocomplete="off"><input id="name" class="input" maxlength="12" placeholder="NICKNAME" autocomplete="off"><button class="btn">CONNECT GAMEPAD</button></form><div id="status" class="status" style="margin-top:12px"></div></div></section>
+<section id="pad" class="screen pad hidden"><div class="top"><div id="pname" class="pname">PLAYER</div><div id="game" class="game">PLAYING</div><div id="rlabel" class="room">ROOM ----</div></div><div class="main"><div id="joy" class="joy"><div id="stick" class="stick"></div></div><div class="actions"><button id="b" class="action b" data-a="ACTION_B">BOOST / SHIELD</button><button id="a" class="action a" data-a="ACTION_A">A</button></div></div><div id="padstatus" class="status">CONNECTED</div></section>
+<script>
+const s=io({transports:['websocket','polling']});let room='',joined=false,pointerId=null,axis={x:0,y:0},sent={x:0,y:0},axisRaf=0;
+const $=x=>document.getElementById(x);const q=new URLSearchParams(location.search).get('room');if(q)$('room').value=q.toUpperCase();$('name').value=localStorage.getItem('playsync_name')||'';
+$('form').onsubmit=e=>{e.preventDefault();room=$('room').value.trim().toUpperCase();let name=($('name').value.trim()||`Player${100+Math.random()*900|0}`).slice(0,12);if(!/^[A-Z0-9]{4}$/.test(room))return stat('Enter the 4-character room code.');localStorage.setItem('playsync_name',name);stat('Connecting…');s.emit('player_join_room',{roomId:room,playerName:name})};
+function stat(x){$('status').textContent=x;$('padstatus').textContent=x}
+function send(a){if(joined)s.emit('controller_input',{roomId:room,action:a})}
+s.on('join_success',d=>{room=d.roomId;joined=true;$('join').classList.add('hidden');$('pad').classList.remove('hidden');$('pname').textContent=`${d.player.name} · P${d.player.slot}`;$('rlabel').textContent=`ROOM ${room}`;game(d.gameId);stat('CONNECTED · DRAG THE STICK IN THE DIRECTION YOU WANT TO MOVE')});
+s.on('room_state',r=>{if(joined&&r.roomId===room)game(r.gameId)});s.on('join_error',stat);s.on('disconnect',()=>joined&&stat('CONNECTION LOST · RECONNECTING…'));s.on('session_closed',()=>{alert('Host closed the session.');location.href='/' });
+function game(id){$('game').textContent=id==='cyber-tank'?'CYBER TANK DUEL':id==='slip-n-bump'?'SLIP N BUMP':'PLAYING'}
+function flushAxis(){axisRaf=0;if(Math.abs(axis.x-sent.x)<.035&&Math.abs(axis.y-sent.y)<.035)return;sent={x:axis.x,y:axis.y};send(`MOVE_AXIS:${axis.x.toFixed(2)},${axis.y.toFixed(2)}`)}
+function setAxis(x,y){const m=Math.hypot(x,y)||1,max=0.88;if(Math.hypot(x,y)>1){x/=m;y/=m}axis.x=Math.max(-max,Math.min(max,x));axis.y=Math.max(-max,Math.min(max,y));if(!axisRaf)axisRaf=requestAnimationFrame(flushAxis)}
+function clear(){axis={x:0,y:0};sent={x:0,y:0};$('stick').style.transform='translate(-50%,-50%)';send('MOVE_AXIS:0,0')}
+function joyPoint(clientX,clientY){const r=$('joy').getBoundingClientRect();let dx=clientX-(r.left+r.width/2),dy=clientY-(r.top+r.height/2),m=r.width*.30,n=Math.hypot(dx,dy)||1;if(n>m){dx=dx/n*m;dy=dy/n*m}$('stick').style.transform=`translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px))`;setAxis(dx/m,dy/m)}
+$('joy').onpointerdown=e=>{pointerId=e.pointerId;$('joy').setPointerCapture(pointerId);joyPoint(e.clientX,e.clientY);e.preventDefault()};
+$('joy').onpointermove=e=>{if(e.pointerId===pointerId){joyPoint(e.clientX,e.clientY);e.preventDefault()}};
+$('joy').onpointerup=e=>{if(e.pointerId===pointerId){pointerId=null;clear()}};$('joy').onpointercancel=()=>{pointerId=null;clear()};
+window.onblur=clear;document.onvisibilitychange=()=>document.hidden&&clear;
+document.querySelectorAll('.action').forEach(b=>{const a=b.dataset.a;b.onpointerdown=e=>{e.preventDefault();b.classList.add('pressed');send(a+'_START');navigator.vibrate?.(15)};const up=e=>{e.preventDefault();b.classList.remove('pressed');send(a+'_STOP')};b.onpointerup=up;b.onpointercancel=up;b.onpointerleave=up});
+</script></body></html>
